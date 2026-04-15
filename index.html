@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>話し声を文字に</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1a1a2e;
+      color: #eaeaea;
+      font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 20px;
+      gap: 32px;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #text-area {
+      width: 100%;
+      max-width: 900px;
+      min-height: 200px;
+      background: #16213e;
+      border-radius: 20px;
+      padding: 36px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 3px solid #0f3460;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    #text-area.listening {
+      border-color: #e94560;
+      box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
+    }
+
+    #transcript {
+      font-size: clamp(1.8rem, 5vw, 2.8rem);
+      line-height: 1.7;
+      text-align: center;
+      word-break: break-all;
+      color: #f0f0f0;
+    }
+
+    #placeholder {
+      font-size: clamp(1.1rem, 3.5vw, 1.6rem);
+      color: #555;
+      text-align: center;
+    }
+
+    #btn {
+      width: clamp(140px, 40vw, 180px);
+      height: clamp(140px, 40vw, 180px);
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: bold;
+      letter-spacing: 0.05em;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #0f3460;
+      color: #aaa;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+      touch-action: manipulation;
+    }
+
+    #btn .icon { font-size: 2.8rem; }
+
+    #btn.ready {
+      background: #e94560;
+      color: #fff;
+      box-shadow: 0 6px 24px rgba(233, 69, 96, 0.5);
+    }
+
+    #btn.ready:active {
+      transform: scale(0.95);
+    }
+
+    #btn.listening {
+      background: #533483;
+      color: #fff;
+      animation: pulse 1.5s infinite;
+      box-shadow: 0 6px 24px rgba(83, 52, 131, 0.6);
+    }
+
+    @keyframes pulse {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.06); }
+      100% { transform: scale(1); }
+    }
+
+    #status {
+      font-size: 1rem;
+      color: #666;
+      min-height: 1.5em;
+      text-align: center;
+    }
+
+    #status.active { color: #e94560; }
+
+    #unsupported {
+      display: none;
+      font-size: 1.3rem;
+      color: #e94560;
+      text-align: center;
+      padding: 20px;
+      line-height: 1.8;
+    }
+
+    #mic-help {
+      display: none;
+      background: #16213e;
+      border: 2px solid #e94560;
+      border-radius: 16px;
+      padding: 24px 28px;
+      max-width: 700px;
+      width: 100%;
+      font-size: clamp(0.95rem, 3vw, 1.1rem);
+      line-height: 2;
+      color: #ccc;
+    }
+
+    #mic-help strong { color: #fff; }
+    #mic-help ol { padding-left: 1.5em; margin-top: 10px; }
+    #mic-help li { margin-bottom: 8px; }
+
+    #mic-help .step-url {
+      background: #0f3460;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 0.9rem;
+      color: #7ec8e3;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="text-area">
+    <div id="transcript" style="display:none"></div>
+    <div id="placeholder">ボタンを押すと文字に変わります</div>
+  </div>
+
+  <button id="btn" disabled>
+    <span class="icon">🎙️</span>
+    <span id="btn-label">準備中…</span>
+  </button>
+
+  <div id="status"></div>
+
+  <div id="unsupported">
+    音声認識に対応していません。<br>
+    iPhone の場合は <strong>Safari</strong> でお試しください。<br>
+    PCの場合は <strong>Google Chrome</strong> でお試しください。
+  </div>
+
+  <div id="mic-help">
+    <strong>🔒 マイクへのアクセスが拒否されています</strong>
+    <ol>
+      <li><strong>iPhoneの場合：</strong><br>
+        設定 → Safari → マイク → 「許可」にする
+      </li>
+      <li><strong>PCの場合：</strong><br>
+        アドレスバーに <span class="step-url">chrome://settings/content/microphone</span> を入力 →「ブロック」から削除
+      </li>
+      <li>このページを <strong>再読み込み</strong> してもう一度ボタンを押す</li>
+    </ol>
+  </div>
+
+  <script>
+    const btn         = document.getElementById('btn');
+    const btnLabel    = document.getElementById('btn-label');
+    const textArea    = document.getElementById('text-area');
+    const transcript  = document.getElementById('transcript');
+    const placeholder = document.getElementById('placeholder');
+    const status      = document.getElementById('status');
+    const micHelp     = document.getElementById('mic-help');
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      document.getElementById('unsupported').style.display = 'block';
+      btn.style.display = 'none';
+    } else {
+
+      // iOSかどうか判定
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+      let recognition = null;
+      let isListening = false;
+      let finalText = '';
+
+      function createRecognition() {
+        const r = new SpeechRecognition();
+        r.lang = 'ja-JP';
+        r.continuous = !isIOS; // iOSはcontinuous非対応のため個別起動
+        r.interimResults = !isIOS; // iOSは途中結果なし（finalのみ）
+
+        r.onstart = () => {
+          btn.className = 'listening';
+          btnLabel.textContent = 'ストップ';
+          textArea.classList.add('listening');
+          status.textContent = '● 聞いています…';
+          status.className = 'active';
+        };
+
+        r.onresult = (e) => {
+          let interim = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) {
+              finalText = e.results[i][0].transcript;
+            } else {
+              interim = e.results[i][0].transcript;
+            }
+          }
+          showText(finalText + interim);
+        };
+
+        r.onend = () => {
+          if (isListening) {
+            // 聞き続けるために自動再起動
+            try { recognition.start(); } catch(e) {}
+          }
+        };
+
+        r.onerror = (e) => {
+          if (e.error === 'not-allowed' || e.error === 'audio-capture') {
+            isListening = false;
+            setReady();
+            micHelp.style.display = 'block';
+            status.textContent = '';
+            status.className = '';
+          }
+          // no-speech, network等は無視して続行
+        };
+
+        return r;
+      }
+
+      function showText(text) {
+        if (text) {
+          transcript.textContent = text;
+          transcript.style.display = 'block';
+          placeholder.style.display = 'none';
+        } else {
+          transcript.style.display = 'none';
+          placeholder.style.display = 'block';
+        }
+      }
+
+      function setReady() {
+        btn.disabled = false;
+        btn.className = 'ready';
+        btnLabel.textContent = 'スタート';
+        textArea.classList.remove('listening');
+      }
+
+      btn.addEventListener('click', () => {
+        micHelp.style.display = 'none';
+
+        if (!isListening) {
+          isListening = true;
+          finalText = '';
+          showText('');
+          recognition = createRecognition();
+          recognition.start();
+
+          // スクリーンを消えないようにする（対応ブラウザのみ）
+          if (navigator.wakeLock) {
+            navigator.wakeLock.request('screen').catch(() => {});
+          }
+        } else {
+          isListening = false;
+          recognition.stop();
+          btn.className = 'ready';
+          btnLabel.textContent = 'スタート';
+          textArea.classList.remove('listening');
+          status.textContent = '';
+          status.className = '';
+          finalText = '';
+          showText('');
+        }
+      });
+
+      setReady();
+      showText('');
+    }
+  </script>
+</body>
+</html>
